@@ -2,14 +2,15 @@
 
 const fs = require('fs')
 
+const _ = require('lodash')
 const relative = require('require-relative')
 
 const config = require('./lib/config')
 const extractDependency = require('./lib/extract-dependency')
 const updateShrinkwrap = require('./lib/update-shrinkwrap')
+const getValuesFromCI = require('./lib/get-values-from-ci')
 
 const pkg = relative('./package.json')
-const env = process.env
 
 module.exports = function update () {
   try {
@@ -18,29 +19,36 @@ module.exports = function update () {
     throw new Error('Without a shrinkwrap file present there is no need to run this script')
   }
 
-  if (env.TRAVIS !== 'true') {
-    throw new Error('This script hast to run in an Travis CI environment')
+  const ciValues = getValuesFromCI()
+
+  if (_.isEmpty(ciValues)) {
+    throw new Error('This script must be run in a supported CI environment')
   }
 
-  if (env.TRAVIS_PULL_REQUEST !== 'false') {
+  const isPullRequest = _.get(ciValues, 'isPullRequest', false)
+  const commitMessage = _.get(ciValues, 'commitMessage', '')
+  const gitBranchName = _.get(ciValues, 'gitBranchName', '')
+
+  if (isPullRequest) {
     return console.error('This script needs to run in a branch build, not a PR')
   }
 
-  if (!env.TRAVIS_BRANCH.startsWith(config.branchPrefix)) {
+  if (!gitBranchName.startsWith(config.branchPrefix)) {
     return console.error('Not a Greenkeeper branch')
   }
 
-  if (env.TRAVIS_COMMIT_RANGE) {
+  // TODO: abstract in getValuesFromCI
+  if (process.env.TRAVIS_COMMIT_RANGE) {
     return console.error('Only running on first push of a new branch')
   }
 
-  const dependency = extractDependency(pkg, config.branchPrefix, env.TRAVIS_BRANCH)
+  const dependency = extractDependency(pkg, config.branchPrefix, gitBranchName)
 
   if (!dependency) {
     return console.error('No dependency changed.')
   }
 
-  updateShrinkwrap(dependency, env.TRAVIS_COMMIT_MESSAGE)
+  updateShrinkwrap(dependency, commitMessage)
 
   console.log('Shrinkwrap file updated')
 }

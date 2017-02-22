@@ -2,7 +2,10 @@
 
 const exec = require('child_process').execSync
 
+const _ = require('lodash')
+
 const config = require('./lib/config')
+const getValuesFromCI = require('./lib/get-values-from-ci')
 
 const env = process.env
 
@@ -11,24 +14,35 @@ module.exports = function upload () {
     throw new Error('Please provide a GitHub token as "GH_TOKEN" environment variable')
   }
 
-  if (!env.TRAVIS_BRANCH.startsWith(config.branchPrefix)) {
+  const ciValues = getValuesFromCI()
+
+  if (_.isEmpty(ciValues)) {
+    throw new Error('This script must be run in a supported CI environment')
+  }
+
+  const gitBranchName = _.get(ciValues, 'gitBranchName', '')
+  const shouldUpload = _.get(ciValues, 'shouldUpload', false)
+  const githubRepoSlug = _.get(ciValues, 'githubRepoSlug', false)
+
+  if (!gitBranchName.startsWith(config.branchPrefix)) {
     return console.error('Not a Greenkeeper branch')
   }
 
-  if (env.TRAVIS_BRANCH === (config.branchPrefix + 'initial')) {
+  if (gitBranchName === (config.branchPrefix + 'initial')) {
     return console.error('Not a Greenkeeper update pull request')
   }
 
-  if (env.TRAVIS_COMMIT_RANGE) {
+  // TODO: abstract in getValuesFromCI
+  if (process.env.TRAVIS_COMMIT_RANGE) {
     return console.error('Only running on first push of a new branch')
   }
 
-  if (!env.TRAVIS_JOB_NUMBER.endsWith('.1')) {
+  if (!shouldUpload) {
     return console.error('Only running on first build job')
   }
 
-  exec(`git remote add gk-origin https://${env.GH_TOKEN}@github.com/${env.TRAVIS_REPO_SLUG}`)
-  exec(`git push gk-origin HEAD:${env.TRAVIS_BRANCH}`)
+  exec(`git remote add gk-origin https://${env.GH_TOKEN}@github.com/${githubRepoSlug}`)
+  exec(`git push gk-origin HEAD:${gitBranchName}`)
 }
 
 if (require.main === module) module.exports()
